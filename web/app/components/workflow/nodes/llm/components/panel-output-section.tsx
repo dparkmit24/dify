@@ -96,6 +96,11 @@ const PanelOutputSection: FC<Props> = ({
             type="object"
             description={t(($) => $[`${i18nPrefix}.outputVars.usage`], { ns: 'workflow' })}
           />
+          <VarItem
+            name="model"
+            type="string"
+            description={t(($) => $[`${i18nPrefix}.outputVars.model`], { ns: 'workflow' })}
+          />
           {inputs.structured_output_enabled && (
             <>
               <Split className="mt-3" />
