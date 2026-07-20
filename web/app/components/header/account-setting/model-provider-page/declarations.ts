@@ -106,6 +106,7 @@ export type CredentialFormSchemaBase = {
   required: boolean
   default?: string
   tooltip?: TypeWithI18N
+  help?: TypeWithI18N
   show_on: FormShowOnObject[]
   url?: string
   scope?: string

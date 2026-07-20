@@ -359,6 +359,9 @@ const ModelModal: FC<ModelModalProps> = ({
                   return {
                     ...formSchema,
                     name: formSchema.variable,
+                    // Surface plugin-supplied per-field `help` as a tooltip, matching how
+                    // tool/trigger/agent credential forms map `help` -> `tooltip`.
+                    tooltip: formSchema.tooltip ?? formSchema.help,
                     showRadioUI: formSchema.type === FormTypeEnum.radio,
                     ...(isOfficialOpenAIProvider && formSchema.variable === 'api_protocol'
                       ? {
