@@ -609,3 +609,76 @@ describe('useNodesSyncDraft — handleRefreshWorkflowDraft(true) on 409', () => 
     expect(mockPostWithKeepalive).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('useNodesSyncDraft — a no-op sync is not a failure', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    reactFlowState = {
+      getNodes: mockGetNodes,
+      edges: [],
+      transform: [0, 0, 1],
+    }
+    workflowStoreState = {
+      appId: 'app-1',
+      isWorkflowDataLoaded: true,
+      syncWorkflowDraftHash: 'hash-123',
+      environmentVariables: [],
+      conversationVariables: [],
+      setSyncWorkflowDraftHash: mockSetSyncWorkflowDraftHash,
+      setDraftUpdatedAt: mockSetDraftUpdatedAt,
+    }
+    featuresState = {
+      features: {
+        opening: { enabled: false, opening_statement: '', suggested_questions: [] },
+        suggested: {},
+        text2speech: {},
+        speech2text: {},
+        citation: {},
+        moderation: {},
+        file: {},
+      },
+    }
+    mockGetNodesReadOnly.mockReturnValue(false)
+    mockGetNodes.mockReturnValue([
+      { id: 'n1', position: { x: 0, y: 0 }, data: { type: BlockEnum.Start } },
+    ])
+    mockSyncWorkflowDraft.mockResolvedValue({ hash: 'new', updated_at: 1 })
+    mockCollaborationIsConnected.mockReturnValue(false)
+    mockCollaborationGetIsLeader.mockReturnValue(true)
+    mockCollaborationCanPersistLocalGraph.mockReturnValue(true)
+    mockCollaborationCanFlushGraphOnPageClose.mockReturnValue(true)
+    isCollaborationEnabled = false
+  })
+
+  it('does NOT report onError and makes no draft POST when the draft is not loaded yet', async () => {
+    // getPostParams() returns null while the draft is still loading (!isWorkflowDataLoaded).
+    // Nothing is sent, so this is a no-op — it must not surface as a save failure.
+    workflowStoreState.isWorkflowDataLoaded = false
+    const callbacks = { onError: vi.fn(), onSuccess: vi.fn(), onSettled: vi.fn() }
+
+    const { result } = renderUseNodesSyncDraft()
+    await act(async () => {
+      await result.current.doSyncWorkflowDraft(true, callbacks)
+    })
+
+    expect(mockSyncWorkflowDraft).not.toHaveBeenCalled()
+    expect(callbacks.onError).not.toHaveBeenCalled()
+    expect(callbacks.onSuccess).not.toHaveBeenCalled()
+  })
+
+  it('STILL reports onError when a genuine draft POST fails', async () => {
+    // A real save failure (the POST rejects) must continue to surface as an error.
+    const error = { json: vi.fn().mockResolvedValue({ code: 'internal_server_error' }), bodyUsed: false }
+    mockSyncWorkflowDraft.mockRejectedValue(error)
+    const callbacks = { onError: vi.fn(), onSuccess: vi.fn(), onSettled: vi.fn() }
+
+    const { result } = renderUseNodesSyncDraft()
+    await act(async () => {
+      await result.current.doSyncWorkflowDraft(true, callbacks)
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(mockSyncWorkflowDraft).toHaveBeenCalled()
+    expect(callbacks.onError).toHaveBeenCalled()
+  })
+})

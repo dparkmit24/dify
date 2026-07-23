@@ -158,7 +158,10 @@ const useNodesSyncDraftBase = (getNodesReadOnly: () => boolean) => {
 
       const baseParams = getPostParams()
       if (!baseParams) {
-        callback?.onError?.()
+        // getPostParams() returns null only when there is nothing to sync yet — no appId, or
+        // the draft has not finished loading (isWorkflowDataLoaded is false). That is a no-op,
+        // not a save failure, so it must not surface as a "Draft save failed" error. A genuine
+        // failure is the syncWorkflowDraft rejection handled in the catch below.
         callback?.onSettled?.()
         return null
       }
