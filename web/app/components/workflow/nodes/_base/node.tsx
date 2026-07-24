@@ -240,7 +240,10 @@ const BaseNode: FC<BaseNodeProps> = ({ id, data, children }) => {
             type="button"
             aria-label={data.title}
             className="mr-1 flex min-w-0 grow appearance-none items-center rounded-md border-0 bg-transparent p-0 text-left focus-visible:ring-2 focus-visible:ring-state-accent-solid focus-visible:outline-hidden"
-            onClick={() => selectWorkflowNode(id)}
+            onClick={() => {
+              if (controlMode === ControlMode.Comment) return
+              selectWorkflowNode(id)
+            }}
           >
             <BlockIcon className="mr-2 shrink-0" type={data.type} size="md" toolIcon={toolIcon} />
             <div className="flex min-w-0 grow items-center system-sm-semibold-uppercase text-text-primary">
