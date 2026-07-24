@@ -42,6 +42,20 @@ class TestValidPassword:
 
         assert "at least 8" in str(exc_info.value)
 
+    def test_should_reject_password_with_trailing_newline(self):
+        """A password with a trailing LF must not be silently accepted."""
+        with pytest.raises(ValueError):
+            valid_password("Password123\n")
+
+    def test_should_reject_password_with_trailing_crlf(self):
+        """A password with a trailing CRLF must not be silently accepted."""
+        with pytest.raises(ValueError):
+            valid_password("Password123\r\n")
+
+    def test_should_still_accept_valid_password_without_trailing_newline(self):
+        """A valid password with no trailing newline continues to be accepted."""
+        assert valid_password("Password123") == "Password123"
+
 
 class TestPasswordHashing:
     """Test password hashing and comparison"""
