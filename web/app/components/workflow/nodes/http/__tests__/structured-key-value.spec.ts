@@ -9,7 +9,7 @@ import {
 /**
  * Verbatim copy of the pre-spike `use-key-value-list.ts` round trip (HEAD
  * 58f83fa7e7). Reproduced here rather than imported so the test measures the
- * old* behaviour even though the hook has been migrated — every "legacy" string
+ * pre-spike behaviour even though the hook has been migrated — every "legacy" string
  * below is produced by this code, not hand-written, so the fixtures are provably
  * the shape the shipping editor emits.
  */

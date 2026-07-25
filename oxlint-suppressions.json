@@ -4662,9 +4662,6 @@
   "web/app/components/workflow/nodes/http/use-config.ts": {
     "eslint-react/set-state-in-effect": {
       "count": 1
-    },
-    "typescript/no-explicit-any": {
-      "count": 1
     }
   },
   "web/app/components/workflow/nodes/http/use-single-run-form-params.ts": {
