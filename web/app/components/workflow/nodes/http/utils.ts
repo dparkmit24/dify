@@ -11,7 +11,11 @@ export const transformToBodyPayload = (old: string, hasKey: boolean): BodyPayloa
     ]
   }
   const bodyPayload = old.split('\n').map((item) => {
-    const [key, value] = item.split(':')
+    // Split on the first colon only, keeping any further colons in the value —
+    // mirrors the sibling parser in hooks/use-key-value-list.ts so a value like
+    // `https://example.com:8080/path` is not truncated to `https`. (#38860)
+    const [key, ...rest] = item.split(':')
+    const value = rest.join(':')
     return {
       key: key || '',
       type: BodyPayloadValueType.text,
