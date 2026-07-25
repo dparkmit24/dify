@@ -1,5 +1,5 @@
 import type { Var } from '../../types'
-import type { Authorization, Body, HttpNodeType, Method, Timeout } from './types'
+import type { Authorization, Body, HttpNodeType, KeyValue, Method, Timeout } from './types'
 import { useBoolean } from 'ahooks'
 import { produce } from 'immer'
 import { useCallback, useEffect, useState } from 'react'
@@ -9,6 +9,7 @@ import { useStore } from '../../store'
 import { VarType } from '../../types'
 import useVarList from '../_base/hooks/use-var-list'
 import useKeyValueList from './hooks/use-key-value-list'
+import { toStructuredKeyValueList } from './structured-key-value'
 import { BodyType } from './types'
 import { transformToBodyPayload } from './utils'
 
@@ -49,6 +50,11 @@ const useConfig = (id: string, payload: HttpNodeType) => {
         }
       }
 
+      // SPIKE: migrate-on-load for params/headers, alongside the body migration
+      // above. Saved workflows hold the legacy string; the editor wants the list.
+      newInputs.headers = toStructuredKeyValueList(newInputs.headers)
+      newInputs.params = toStructuredKeyValueList(newInputs.params)
+
       setInputs(newInputs)
       setIsDataReady(true)
     }
@@ -74,11 +80,13 @@ const useConfig = (id: string, payload: HttpNodeType) => {
     [inputs, setInputs],
   )
 
-  const handleFieldChange = useCallback(
-    (field: string) => {
-      return (value: string) => {
+  // SPIKE: replaces the generic string-valued `handleFieldChange`, whose only
+  // callers were headers/params. The key/value editor now emits a structured list.
+  const handleKeyValueFieldChange = useCallback(
+    (field: 'headers' | 'params') => {
+      return (list: KeyValue[]) => {
         const newInputs = produce(inputs, (draft: HttpNodeType) => {
-          ;(draft as any)[field] = value
+          draft[field] = list
         })
         setInputs(newInputs)
       }
@@ -92,7 +100,7 @@ const useConfig = (id: string, payload: HttpNodeType) => {
     addItem: addHeader,
     isKeyValueEdit: isHeaderKeyValueEdit,
     toggleIsKeyValueEdit: toggleIsHeaderKeyValueEdit,
-  } = useKeyValueList(inputs.headers, handleFieldChange('headers'))
+  } = useKeyValueList(inputs.headers, handleKeyValueFieldChange('headers'))
 
   const {
     list: params,
@@ -100,7 +108,7 @@ const useConfig = (id: string, payload: HttpNodeType) => {
     addItem: addParam,
     isKeyValueEdit: isParamKeyValueEdit,
     toggleIsKeyValueEdit: toggleIsParamKeyValueEdit,
-  } = useKeyValueList(inputs.params, handleFieldChange('params'))
+  } = useKeyValueList(inputs.params, handleKeyValueFieldChange('params'))
 
   const setBody = useCallback(
     (data: Body) => {
@@ -148,8 +156,10 @@ const useConfig = (id: string, payload: HttpNodeType) => {
       const newInputs = produce(inputs, (draft: HttpNodeType) => {
         draft.method = newNode.method
         draft.url = newNode.url
-        draft.headers = newNode.headers
-        draft.params = newNode.params
+        // SPIKE: the curl parser still produces the legacy string; convert at the
+        // boundary rather than migrating the parser in this prototype.
+        draft.headers = toStructuredKeyValueList(newNode.headers)
+        draft.params = toStructuredKeyValueList(newNode.params)
         draft.body = newNode.body
       })
       setInputs(newInputs)

@@ -3,6 +3,7 @@ import type { HttpNodeType } from './types'
 import type { InputVar, Variable } from '@/app/components/workflow/types'
 import { useCallback, useMemo } from 'react'
 import useNodeCrud from '../_base/hooks/use-node-crud'
+import { toScannableText } from './structured-key-value'
 
 type Params = {
   id: string
@@ -33,8 +34,10 @@ const useSingleRunFormParams = ({
   }, [inputs.body.data])
   const varInputs = getInputVars([
     inputs.url,
-    inputs.headers,
-    inputs.params,
+    // SPIKE: variable scanning is text-shaped; flatten the structured list for it.
+    // A real migration should scan keys and values as separate strings instead.
+    toScannableText(inputs.headers),
+    toScannableText(inputs.params),
     typeof inputs.body.data === 'string'
       ? inputs.body.data
       : inputs.body.data?.map((item) => item.value).join(''),

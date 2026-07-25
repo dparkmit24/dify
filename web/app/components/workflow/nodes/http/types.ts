@@ -76,8 +76,11 @@ export type HttpNodeType = CommonNodeType & {
   variables: Variable[]
   method: Method
   url: string
-  headers: string
-  params: string
+  // SPIKE: string is the legacy model, kept readable so saved workflows load
+  // unchanged; the editor now writes KeyValue[]. Mirrors `Body['data']` below,
+  // which already carries `string | BodyPayload` for the same reason.
+  headers: string | KeyValue[]
+  params: string | KeyValue[]
   body: Body
   authorization: Authorization
   timeout: Timeout

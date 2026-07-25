@@ -1,4 +1,4 @@
-import type { HttpNodeType } from '../types'
+import type { HttpNodeType, KeyValue } from '../types'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { useNodesReadOnly } from '@/app/components/workflow/hooks'
 import useNodeCrud from '@/app/components/workflow/nodes/_base/hooks/use-node-crud'
@@ -68,8 +68,9 @@ describe('http/use-config', () => {
   const paramAddItem = vi.fn()
   const paramToggle = vi.fn()
   let currentInputs: HttpNodeType
-  let headerFieldChange: ((value: string) => void) | undefined
-  let paramFieldChange: ((value: string) => void) | undefined
+  // SPIKE: the key/value editor emits a structured list, not a delimited string.
+  let headerFieldChange: ((value: KeyValue[]) => void) | undefined
+  let paramFieldChange: ((value: KeyValue[]) => void) | undefined
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -215,8 +216,8 @@ describe('http/use-config', () => {
     act(() => {
       result.current.handleMethodChange(Method.delete)
       result.current.handleUrlChange('https://changed.example.com')
-      headerFieldChange?.('x-token:123')
-      paramFieldChange?.('size:20')
+      headerFieldChange?.([{ id: 'h1', key: 'x-token', value: '123' }])
+      paramFieldChange?.([{ id: 'p1', key: 'size', value: '20' }])
       result.current.setBody({ type: BodyType.rawText, data: 'raw payload' })
       result.current.showAuthorization()
     })
@@ -261,8 +262,12 @@ describe('http/use-config', () => {
     expect(mockSetInputs).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'https://changed.example.com' }),
     )
-    expect(mockSetInputs).toHaveBeenCalledWith(expect.objectContaining({ headers: 'x-token:123' }))
-    expect(mockSetInputs).toHaveBeenCalledWith(expect.objectContaining({ params: 'size:20' }))
+    expect(mockSetInputs).toHaveBeenCalledWith(
+      expect.objectContaining({ headers: [{ id: 'h1', key: 'x-token', value: '123' }] }),
+    )
+    expect(mockSetInputs).toHaveBeenCalledWith(
+      expect.objectContaining({ params: [{ id: 'p1', key: 'size', value: '20' }] }),
+    )
     expect(mockSetInputs).toHaveBeenCalledWith(
       expect.objectContaining({
         body: { type: BodyType.rawText, data: 'raw payload' },
@@ -284,8 +289,10 @@ describe('http/use-config', () => {
       expect.objectContaining({
         method: Method.patch,
         url: 'https://imported.example.com',
-        headers: 'authorization:Bearer imported',
-        params: 'debug:true',
+        // SPIKE: the curl parser still emits the legacy string; use-config now
+        // converts it to the structured model at the import boundary.
+        headers: [expect.objectContaining({ key: 'authorization', value: 'Bearer imported' })],
+        params: [expect.objectContaining({ key: 'debug', value: 'true' })],
         body: {
           type: BodyType.json,
           data: [{ type: BodyPayloadValueType.text, value: '{"ok":true}' }],

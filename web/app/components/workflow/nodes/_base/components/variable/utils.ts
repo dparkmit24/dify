@@ -3,7 +3,7 @@ import type { AnswerNodeType } from '../../../answer/types'
 import type { CodeNodeType } from '../../../code/types'
 import type { DocExtractorNodeType } from '../../../document-extractor/types'
 import type { EndNodeType } from '../../../end/types'
-import type { HttpNodeType } from '../../../http/types'
+import type { HttpNodeType, KeyValue } from '../../../http/types'
 import type { IfElseNodeType } from '../../../if-else/types'
 import type { IterationNodeType } from '../../../iteration/types'
 import type { KnowledgeRetrievalNodeType } from '../../../knowledge-retrieval/types'
@@ -64,6 +64,7 @@ import { BlockEnum, InputVarType, VarType } from '@/app/components/workflow/type
 import { VAR_REGEX } from '@/config'
 import { AppModeEnum } from '@/types/app'
 import { OUTPUT_FILE_SUB_VARIABLES } from '../../../constants'
+import { toScannableText } from '../../../http/structured-key-value'
 import { Type } from '../../../llm/types'
 import { VarType as ToolVarType } from '../../../tool/types'
 
@@ -1209,6 +1210,26 @@ const replaceOldVarInText = (text: string, oldVar: ValueSelector, newVar: ValueS
   return text.replaceAll(`{{#${oldVar.join('.')}#}}`, `{{#${newVar.join('.')}#}}`)
 }
 
+/**
+ * SPIKE: HTTP headers/params may be the legacy string or the structured list.
+ * The structured branch rewrites each cell independently, so a rename can no
+ * longer disturb neighbouring rows or the delimiters between them.
+ */
+const replaceOldVarInKeyValue = (
+  value: string | KeyValue[],
+  oldVar: ValueSelector,
+  newVar: ValueSelector,
+): string | KeyValue[] => {
+  if (typeof value === 'string') return replaceOldVarInText(value, oldVar, newVar)
+  if (!Array.isArray(value)) return value
+
+  return value.map((item) => ({
+    ...item,
+    key: replaceOldVarInText(item.key, oldVar, newVar),
+    value: replaceOldVarInText(item.value, oldVar, newVar),
+  }))
+}
+
 const getPromptItemTexts = (prompt: PromptItem): string[] => {
   const texts = [prompt.text]
   if (prompt.jinja2_text) texts.push(prompt.jinja2_text)
@@ -1314,8 +1335,9 @@ export const getNodeUsedVars = (node: Node): ValueSelector[] => {
       const payload = data as HttpNodeType
       res = matchNotSystemVars([
         payload.url,
-        payload.headers,
-        payload.params,
+        // SPIKE: headers/params may be the legacy string or the structured list.
+        toScannableText(payload.headers),
+        toScannableText(payload.params),
         typeof payload.body.data === 'string'
           ? payload.body.data
           : payload.body.data.map((d) => d.value).join(''),
@@ -1672,8 +1694,10 @@ export const updateNodeVars = (
       case BlockEnum.HttpRequest: {
         const payload = data as HttpNodeType
         payload.url = replaceOldVarInText(payload.url, oldVarSelector, newVarSelector)
-        payload.headers = replaceOldVarInText(payload.headers, oldVarSelector, newVarSelector)
-        payload.params = replaceOldVarInText(payload.params, oldVarSelector, newVarSelector)
+        // SPIKE: rename rewrites each field in place, so the structured list is
+        // rewritten row-wise instead of via the lossy string round trip.
+        payload.headers = replaceOldVarInKeyValue(payload.headers, oldVarSelector, newVarSelector)
+        payload.params = replaceOldVarInKeyValue(payload.params, oldVarSelector, newVarSelector)
         if (typeof payload.body.data === 'string') {
           payload.body.data = replaceOldVarInText(payload.body.data, oldVarSelector, newVarSelector)
         } else {
