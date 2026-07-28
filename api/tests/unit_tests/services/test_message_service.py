@@ -13,6 +13,7 @@ import services.message_service as service_module
 from core.app.entities.app_invoke_entities import InvokeFrom
 from graphon.model_runtime.entities.model_entities import ModelType
 from models.account import Account, AccountStatus
+from models.agent_config_entities import AgentSoulConfig
 from models.enums import (
     ConversationFromSource,
     EndUserType,
@@ -30,6 +31,7 @@ from models.model import (
     MessageFeedback,
 )
 from repositories.sqlalchemy_execution_extra_content_repository import SQLAlchemyExecutionExtraContentRepository
+from services.agent.errors import AgentVersionNotFoundError
 from services.errors.message import (
     FirstMessageNotExistsError,
     LastMessageNotExistsError,
@@ -854,3 +856,129 @@ class TestMessageServiceSuggestedQuestions:
                 invoke_from=InvokeFrom.WEB_APP,
                 session=sqlite_session,
             )
+
+    @staticmethod
+    def _patch_published_soul(
+        monkeypatch: pytest.MonkeyPatch,
+        result: AgentSoulConfig | Exception | None,
+    ) -> MagicMock:
+        roster_service = MagicMock()
+        if isinstance(result, Exception):
+            roster_service.return_value.get_published_agent_soul_for_app.side_effect = result
+        else:
+            roster_service.return_value.get_published_agent_soul_for_app.return_value = result
+        monkeypatch.setattr(service_module, "AgentRosterService", roster_service)
+        return roster_service
+
+    def test_agent_app_uses_published_soul_feature(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        factory: MessageServiceTestDataFactory,
+        sqlite_session: Session,
+    ) -> None:
+        conversation = factory.create_conversation()
+        _, _, llm_generator = self._chat_boundaries(monkeypatch, conversation)
+        agent_soul = AgentSoulConfig.model_validate(
+            {"app_features": {"suggested_questions_after_answer": {"enabled": True, "prompt": "soul prompt"}}}
+        )
+        self._patch_published_soul(monkeypatch, agent_soul)
+
+        result = MessageService.get_suggested_questions_after_answer(
+            app_model=factory.create_app(mode=AppMode.AGENT),
+            user=factory.create_end_user(),
+            message_id="msg-123",
+            invoke_from=InvokeFrom.SERVICE_API,
+            session=sqlite_session,
+        )
+
+        assert result == ["Q1?"]
+        llm_generator.generate_suggested_questions_after_answer.assert_called_once_with(
+            tenant_id="tenant-123",
+            histories="histories",
+            instruction_prompt="soul prompt",
+            model_config=None,
+        )
+
+    def test_agent_app_soul_merges_over_legacy_config(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        factory: MessageServiceTestDataFactory,
+        sqlite_session: Session,
+    ) -> None:
+        app_model_config = AppModelConfig(
+            app_id="app-123",
+            suggested_questions_after_answer=json.dumps({"enabled": True, "prompt": "legacy prompt"}),
+        )
+        app_model_config.id = "config-1"
+        _persist(sqlite_session, app_model_config)
+        conversation = factory.create_conversation(app_model_config_id=app_model_config.id)
+        _, _, llm_generator = self._chat_boundaries(monkeypatch, conversation)
+        # Soul does not set the feature, so the legacy app_model_config value survives the merge.
+        self._patch_published_soul(monkeypatch, AgentSoulConfig.model_validate({}))
+        app_model = factory.create_app(mode=AppMode.AGENT)
+        app_model.app_model_config_id = app_model_config.id
+
+        result = MessageService.get_suggested_questions_after_answer(
+            app_model=app_model,
+            user=factory.create_end_user(),
+            message_id="msg-123",
+            invoke_from=InvokeFrom.SERVICE_API,
+            session=sqlite_session,
+        )
+
+        assert result == ["Q1?"]
+        llm_generator.generate_suggested_questions_after_answer.assert_called_once_with(
+            tenant_id="tenant-123",
+            histories="histories",
+            instruction_prompt="legacy prompt",
+            model_config=None,
+        )
+
+    def test_agent_app_soul_disabled_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        factory: MessageServiceTestDataFactory,
+        sqlite_session: Session,
+    ) -> None:
+        conversation = factory.create_conversation()
+        self._chat_boundaries(monkeypatch, conversation)
+        agent_soul = AgentSoulConfig.model_validate(
+            {"app_features": {"suggested_questions_after_answer": {"enabled": False}}}
+        )
+        self._patch_published_soul(monkeypatch, agent_soul)
+
+        with pytest.raises(SuggestedQuestionsAfterAnswerDisabledError):
+            MessageService.get_suggested_questions_after_answer(
+                app_model=factory.create_app(mode=AppMode.AGENT),
+                user=factory.create_end_user(),
+                message_id="msg-123",
+                invoke_from=InvokeFrom.SERVICE_API,
+                session=sqlite_session,
+            )
+
+    def test_agent_app_unpublished_falls_back_to_legacy_config(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        factory: MessageServiceTestDataFactory,
+        sqlite_session: Session,
+    ) -> None:
+        app_model_config = AppModelConfig(
+            app_id="app-123",
+            suggested_questions_after_answer=json.dumps({"enabled": True}),
+        )
+        app_model_config.id = "config-1"
+        _persist(sqlite_session, app_model_config)
+        conversation = factory.create_conversation(app_model_config_id=app_model_config.id)
+        _, _, llm_generator = self._chat_boundaries(monkeypatch, conversation)
+        self._patch_published_soul(monkeypatch, AgentVersionNotFoundError())
+
+        result = MessageService.get_suggested_questions_after_answer(
+            app_model=factory.create_app(mode=AppMode.AGENT),
+            user=factory.create_end_user(),
+            message_id="msg-123",
+            invoke_from=InvokeFrom.DEBUGGER,
+            session=sqlite_session,
+        )
+
+        assert result == ["Q1?"]
+        llm_generator.generate_suggested_questions_after_answer.assert_called_once()

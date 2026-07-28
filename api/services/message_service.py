@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.app.apps.advanced_chat.app_config_manager import AdvancedChatAppConfigManager
+from core.app.apps.agent_app.app_feature_projection import merge_agent_app_features
 from core.app.entities.app_invoke_entities import InvokeFrom
 from core.llm_generator.llm_generator import LLMGenerator
 from core.memory.token_buffer_memory import TokenBufferMemory
@@ -17,6 +18,7 @@ from extensions.ext_database import db
 from graphon.model_runtime.entities.model_entities import ModelType
 from libs.infinite_scroll_pagination import InfiniteScrollPagination
 from models import Account
+from models.agent_config_entities import AgentSoulConfig
 from models.enums import FeedbackFromSource, FeedbackRating
 from models.model import (
     App,
@@ -26,11 +28,14 @@ from models.model import (
     Message,
     MessageFeedback,
     SuggestedQuestionsAfterAnswerConfig,
+    load_annotation_reply_config,
 )
 from repositories.execution_extra_content_repository import ExecutionExtraContentRepository
 from repositories.sqlalchemy_execution_extra_content_repository import (
     SQLAlchemyExecutionExtraContentRepository,
 )
+from services.agent.errors import AgentVersionNotFoundError
+from services.agent.roster_service import AgentRosterService
 from services.conversation_service import ConversationService
 from services.errors.message import (
     FirstMessageNotExistsError,
@@ -278,6 +283,17 @@ class MessageService:
         model_manager = ModelManager.for_tenant(tenant_id=app_model.tenant_id)
         suggested_questions_after_answer_config: SuggestedQuestionsAfterAnswerConfig = {"enabled": False}
 
+        agent_soul: AgentSoulConfig | None = None
+        if app_model.mode == AppMode.AGENT:
+            try:
+                agent_soul = AgentRosterService(session).get_published_agent_soul_for_app(
+                    tenant_id=app_model.tenant_id,
+                    app_id=app_model.id,
+                )
+            except AgentVersionNotFoundError:
+                # Not published yet; keep the legacy app_model_config fallback below.
+                agent_soul = None
+
         if app_model.mode == AppMode.ADVANCED_CHAT:
             workflow_service = WorkflowService()
             if invoke_from == InvokeFrom.DEBUGGER:
@@ -301,6 +317,21 @@ class MessageService:
                 suggested_questions_after_answer_config = cast(
                     SuggestedQuestionsAfterAnswerConfig, suggested_questions_after_answer
                 )
+        elif agent_soul is not None:
+            # Published Agent Apps keep this feature in the active Agent Soul; merge it
+            # over the legacy app_model_config the same way the runtime, /parameters and
+            # the audio service do (Soul fields override same-named legacy keys).
+            app_model_config = app_model.app_model_config_with_session(session=session)
+            annotation_reply = load_annotation_reply_config(session, app_model.id) if app_model_config else None
+            features = merge_agent_app_features(
+                agent_soul=agent_soul,
+                app_model_config=app_model_config,
+                annotation_reply=annotation_reply,
+            )
+            feature_config = features.get("suggested_questions_after_answer")
+            if not isinstance(feature_config, dict) or not feature_config.get("enabled"):
+                raise SuggestedQuestionsAfterAnswerDisabledError()
+            suggested_questions_after_answer_config = cast(SuggestedQuestionsAfterAnswerConfig, feature_config)
         else:
             if not conversation.override_model_configs:
                 app_model_config = session.scalar(
