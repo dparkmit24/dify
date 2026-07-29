@@ -1,4 +1,5 @@
 {
+  "callback.canCloseWindow": "Authorization flow completed. You can close this window now.",
   "connect": "Connect to",
   "continue": "Continue",
   "error.authAppInfoFetchFailed": "Failed to fetch app info for authorization",

@@ -1,8 +1,10 @@
 'use client'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { validateRedirectUrl } from '@/utils/urlValidation'
 
 export const useOAuthCallback = () => {
+  const [hasOpener, setHasOpener] = useState(true)
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const subscriptionId = urlParams.get('subscription_id')
@@ -41,8 +43,18 @@ export const useOAuthCallback = () => {
         )
       }
       window.close()
+    } else {
+      // Some OAuth providers set Cross-Origin-Opener-Policy on pages the popup
+      // navigates through, which severs window.opener; the console detects
+      // completion by polling popup.closed, so closing is enough to notify it.
+      window.close()
+      // If the browser refuses to close the window, let the page show guidance
+      // instead of staying blank.
+      setHasOpener(false)
     }
   }, [])
+
+  return hasOpener
 }
 
 export const openOAuthPopup = (url: string, callback: (data?: any) => void) => {

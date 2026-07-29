@@ -1,4 +1,5 @@
 {
+  "callback.canCloseWindow": "授权流程已完成，现在可以关闭此窗口。",
   "connect": "连接到",
   "continue": "继续",
   "error.authAppInfoFetchFailed": "获取待授权应用的信息失败",
