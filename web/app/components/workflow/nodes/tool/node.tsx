@@ -1,18 +1,35 @@
 import type { FC } from 'react'
 import type { ToolNodeType } from './types'
-import type { NodeProps } from '@/app/components/workflow/types'
+import type {
+  Node as WorkflowNode,
+  NodeProps,
+  ValueSelector,
+} from '@/app/components/workflow/types'
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNodes } from 'reactflow'
 import { FormTypeEnum } from '@/app/components/header/account-setting/model-provider-page/declarations'
 import { InstallPluginButton } from '@/app/components/workflow/nodes/_base/components/install-plugin-button'
+import { isSystemVar } from '@/app/components/workflow/nodes/_base/components/variable/utils'
+import { VariableLabelInNode } from '@/app/components/workflow/nodes/_base/components/variable/variable-label'
+import { BlockEnum } from '@/app/components/workflow/types'
 import { useNodePluginInstallation } from '../../hooks/use-node-plugin-installation'
 import { isToolAuthorizationRequired } from './auth'
 import useCurrentToolCollection from './hooks/use-current-tool-collection'
+import { VarType as VarKindType } from './types'
 
 const Node: FC<NodeProps<ToolNodeType>> = ({ data }) => {
   const { t } = useTranslation()
+  const nodes: WorkflowNode[] = useNodes()
   const { tool_configurations, paramSchemas } = data
   const toolConfigs = Object.keys(tool_configurations || {})
+  const isVariableValue = (key: string) =>
+    tool_configurations[key]?.type === VarKindType.variable &&
+    Array.isArray(tool_configurations[key].value)
+  const findVariableNode = (variables: ValueSelector) =>
+    isSystemVar(variables)
+      ? nodes.find((node) => node.data.type === BlockEnum.Start)
+      : nodes.find((node) => node.id === variables[0])
   const { isChecking, isMissing, uniqueIdentifier, canInstall, onInstallSuccess, shouldDim } =
     useNodePluginInstallation(data)
   const { currCollection } = useCurrentToolCollection(data.provider_type, data.provider_id)
@@ -76,7 +93,7 @@ const Node: FC<NodeProps<ToolNodeType>> = ({ data }) => {
                       : tool_configurations[key].value}
                   </div>
                 )}
-                {Array.isArray(tool_configurations[key].value) && (
+                {Array.isArray(tool_configurations[key].value) && !isVariableValue(key) && (
                   <div
                     title={tool_configurations[key].value.join(', ')}
                     className="w-0 shrink-0 grow truncate text-right text-xs font-normal text-text-secondary"
@@ -84,13 +101,21 @@ const Node: FC<NodeProps<ToolNodeType>> = ({ data }) => {
                     {tool_configurations[key].value.join(', ')}
                   </div>
                 )}
-                {typeof tool_configurations[key] !== 'string' &&
-                  tool_configurations[key]?.type === FormTypeEnum.modelSelector && (
+                {isVariableValue(key) && (
+                  <VariableLabelInNode
+                    variables={tool_configurations[key].value}
+                    nodeType={findVariableNode(tool_configurations[key].value)?.data.type}
+                    nodeTitle={findVariableNode(tool_configurations[key].value)?.data.title}
+                  />
+                )}
+                {typeof tool_configurations[key].value === 'object' &&
+                  !Array.isArray(tool_configurations[key].value) &&
+                  typeof tool_configurations[key].value?.model === 'string' && (
                     <div
-                      title={tool_configurations[key].model}
+                      title={tool_configurations[key].value.model}
                       className="w-0 shrink-0 grow truncate text-right text-xs font-normal text-text-secondary"
                     >
-                      {tool_configurations[key].model}
+                      {tool_configurations[key].value.model}
                     </div>
                   )}
               </div>
