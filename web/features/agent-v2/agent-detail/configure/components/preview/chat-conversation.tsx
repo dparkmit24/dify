@@ -8,7 +8,6 @@ import type { InputForm } from '@/app/components/base/chat/chat/type'
 import type { ChatItem, ChatItemInTree, OnSend } from '@/app/components/base/chat/types'
 import type { FileEntity } from '@/app/components/base/file-uploader/types'
 import type { SpeechToTextTarget } from '@/app/components/base/voice-input/types'
-import type { AgentComposerModel } from '@/features/agent-v2/agent-composer/form-state'
 import type { Inputs } from '@/models/debug'
 import { Avatar } from '@langgenius/dify-ui/avatar'
 import { cn } from '@langgenius/dify-ui/cn'
@@ -18,12 +17,10 @@ import { useCallback, useImperativeHandle, useLayoutEffect, useRef, useState } f
 import { AgentRosterResponseContent } from '@/app/components/base/chat/chat/answer/agent-roster-response-content'
 import { useChat } from '@/app/components/base/chat/chat/hooks'
 import { getLastAnswer, isValidGeneratedAnswer } from '@/app/components/base/chat/utils'
-import { ModelFeatureEnum } from '@/app/components/header/account-setting/model-provider-page/declarations'
-import { useTextGenerationCurrentProviderAndModelAndModelList } from '@/app/components/header/account-setting/model-provider-page/hooks'
 import { userProfileAtom } from '@/context/account-state'
 import dynamic from '@/next/dynamic'
 import { consoleClient, consoleQuery } from '@/service/client'
-import { buildChatConfig, getAgentSoulInputs, getAgentSoulInputsForm } from './chat-config'
+import { getAgentSoulInputs, getAgentSoulInputsForm } from './chat-config'
 
 const Chat = dynamic(() => import('@/app/components/base/chat/chat'), { ssr: false })
 
@@ -77,7 +74,6 @@ export function AgentPreviewChatConversation({
   clearChatList,
   config,
   conversationId,
-  currentModel,
   draftType,
   initialChatTree,
   inputs,
@@ -101,7 +97,6 @@ export function AgentPreviewChatConversation({
   clearChatList: boolean
   config: AgentPreviewChatConfig
   conversationId?: string | null
-  currentModel?: AgentComposerModel
   draftType?: 'debug_build'
   initialChatTree: ChatItemInTree[]
   inputs: Inputs
@@ -128,8 +123,6 @@ export function AgentPreviewChatConversation({
     sendInterruptedRef.current = true
     onSendInterrupted?.()
   }, [onSendInterrupted])
-  const { textGenerationModelList } =
-    useTextGenerationCurrentProviderAndModelAndModelList(currentModel)
   const {
     chatList,
     setTargetMessageId,
@@ -171,21 +164,7 @@ export function AgentPreviewChatConversation({
         const runtimeInputs = preparedAgentSoulConfig
           ? getAgentSoulInputs(runtimeInputsForm)
           : inputs
-        const runtimeConfig = preparedAgentSoulConfig
-          ? buildChatConfig({
-              agentSoulConfig: runtimeAgentSoulConfig,
-              currentModel: undefined,
-              prompt: runtimeAgentSoulConfig?.prompt?.system_prompt ?? '',
-            })
-          : config
 
-        const currentProvider = textGenerationModelList.find(
-          (item) => item.provider === runtimeConfig.model.provider,
-        )
-        const selectedModel = currentProvider?.models.find(
-          (model) => model.model === runtimeConfig.model.name,
-        )
-        const supportVision = selectedModel?.features?.includes(ModelFeatureEnum.vision)
         const data: Record<string, unknown> = {
           query: message,
           inputs: runtimeInputs,
@@ -195,7 +174,7 @@ export function AgentPreviewChatConversation({
         }
         if (draftType) data.draft_type = draftType
 
-        if (files?.length && supportVision) data.files = files
+        if (files?.length) data.files = files
 
         sendMessage({
           agentId,
@@ -253,7 +232,6 @@ export function AgentPreviewChatConversation({
       agentId,
       agentSoulConfig,
       chatList,
-      config,
       conversationId,
       draftType,
       handleSend,
@@ -266,7 +244,6 @@ export function AgentPreviewChatConversation({
       onSaveDraftBeforeRun,
       queryClient,
       sendMessage,
-      textGenerationModelList,
     ],
   )
 

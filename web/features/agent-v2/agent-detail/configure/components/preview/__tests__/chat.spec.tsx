@@ -1,6 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react'
 import type { AgentPreviewChatController } from '../chat-conversation'
 import type { AgentChatRuntimeEmptyStateProps } from '../chat-runtime'
+import type { FileEntity } from '@/app/components/base/file-uploader/types'
 import type { SpeechToTextTarget } from '@/app/components/base/voice-input/types'
 import type { AgentSoulConfigFormState } from '@/features/agent-v2/agent-composer/form-state'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -1136,6 +1137,35 @@ describe('AgentPreviewChat', () => {
         task_id: 'task-1',
       },
     })
+  })
+
+  it('should include uploaded files in the chat request when the model does not support vision', async () => {
+    const controllerRef = createRef<AgentPreviewChatController>()
+    renderPreviewChat({ controllerRef })
+
+    await waitFor(() => expect(controllerRef.current).not.toBeNull())
+
+    const documentFile: FileEntity = {
+      id: 'file-1',
+      name: 'brief.pdf',
+      size: 456,
+      type: 'application/pdf',
+      progress: 100,
+      transferMethod: TransferMethod.local_file,
+      supportFileType: SupportUploadFileTypes.document,
+    }
+    await act(async () => {
+      await controllerRef.current?.send('read the attachment', [documentFile])
+    })
+
+    await waitFor(() => expect(handleSendMock).toHaveBeenCalledTimes(1))
+    expect(handleSendMock).toHaveBeenCalledWith(
+      'agent/agent-1/chat-messages',
+      expect.objectContaining({
+        files: [documentFile],
+      }),
+      expect.any(Object),
+    )
   })
 
   it('should notify the owner once when a stopped send later settles with an error', async () => {
