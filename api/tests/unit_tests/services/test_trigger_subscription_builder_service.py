@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from core.plugin.entities.plugin_daemon import CredentialType
-from core.trigger.entities.entities import SubscriptionBuilder, SubscriptionBuilderUpdater
+from core.trigger.entities.entities import Subscription, SubscriptionBuilder, SubscriptionBuilderUpdater
 from core.trigger.trigger_manager import TriggerManager
 from models.provider_ids import TriggerProviderID
 from services.trigger.trigger_subscription_builder_service import TriggerSubscriptionBuilderService
@@ -196,6 +196,41 @@ def test_update_and_build_uses_the_owned_builder_without_refetching() -> None:
     assert subscription_call["endpoint_id"] == builder.endpoint_id
     assert subscription_call["name"] == "Updated"
     delete.assert_called_once_with(cache_key)
+
+
+def test_update_and_build_persists_expires_at_returned_by_the_provider() -> None:
+    builder = subscription_builder().model_copy(
+        update={"credential_type": CredentialType.OAUTH2, "credentials": {"access_token": "token"}}
+    )
+    provider_subscription = Subscription(
+        expires_at=1787560681,
+        endpoint="https://dify.example.com/triggers/plugin/builder-1",
+        properties={"history_id": "12345"},
+    )
+
+    with (
+        patch.object(TriggerManager, "get_trigger_provider", return_value=Mock()),
+        patch.object(TriggerSubscriptionBuilderService, "acquire_builder_lock", return_value=nullcontext()),
+        patch.object(TriggerSubscriptionBuilderService, "get_subscription_builder", return_value=builder),
+        patch.object(TriggerManager, "subscribe_trigger", return_value=provider_subscription),
+        patch("services.trigger.trigger_subscription_builder_service.redis_client.setex"),
+        patch(
+            "services.trigger.trigger_subscription_builder_service.TriggerProviderService.add_trigger_subscription"
+        ) as add_subscription,
+        patch("services.trigger.trigger_subscription_builder_service.redis_client.delete"),
+    ):
+        TriggerSubscriptionBuilderService.update_and_build_builder(
+            tenant_id="tenant-1",
+            user_id="user-1",
+            provider_id=PROVIDER_ID,
+            subscription_builder_id=builder.id,
+            subscription_builder_updater=SubscriptionBuilderUpdater(name="Updated"),
+        )
+
+    add_subscription.assert_called_once()
+    subscription_call = add_subscription.call_args.kwargs
+    assert subscription_call["expires_at"] == provider_subscription.expires_at
+    assert subscription_call["properties"] == provider_subscription.properties
 
 
 def test_list_logs_uses_the_owned_builder_endpoint() -> None:

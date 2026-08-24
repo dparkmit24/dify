@@ -267,7 +267,7 @@ class TriggerSubscriptionBuilderService:
                     credentials=subscription_builder.credentials,
                     credential_type=credential_type,
                     credential_expires_at=subscription_builder.credential_expires_at or -1,
-                    expires_at=subscription_builder.expires_at,
+                    expires_at=subscription.expires_at,
                 )
 
             # Delete the builder after successful subscription creation
