@@ -3,6 +3,7 @@ import os
 from collections.abc import Mapping
 from typing import Any, override
 
+from pydantic import AliasChoices
 from pydantic.fields import FieldInfo
 
 from .http_request import NacosHttpClient
@@ -44,7 +45,22 @@ class NacosSettingsSource(RemoteSettingsSource):
     @override
     def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
         field_value = self.remote_configs.get(field_name)
-        if field_value is None:
-            return None, field_name, False
+        if field_value is not None:
+            return field_value, field_name, False
 
-        return field_value, field_name, False
+        # Fall back to the field's validation aliases, mirroring how EnvSettingsSource
+        # resolves keys for fields declared with validation_alias / AliasChoices.
+        validation_alias = field.validation_alias
+        if isinstance(validation_alias, str):
+            alias_names = [validation_alias]
+        elif isinstance(validation_alias, AliasChoices):
+            alias_names = [choice for choice in validation_alias.choices if isinstance(choice, str)]
+        else:
+            alias_names = []
+
+        for alias_name in alias_names:
+            alias_value = self.remote_configs.get(alias_name)
+            if alias_value is not None:
+                return alias_value, alias_name, False
+
+        return None, field_name, False
