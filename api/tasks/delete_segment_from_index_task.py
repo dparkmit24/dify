@@ -38,28 +38,30 @@ def delete_segment_from_index_task(
             if not dataset_document:
                 return
 
+            doc_form = dataset_document.doc_form
+            index_processor = IndexProcessorFactory(doc_form).init_index_processor()
+
             if (
                 not dataset_document.enabled
                 or dataset_document.archived
                 or dataset_document.indexing_status != "completed"
             ):
-                logging.info("Document not in valid state for index operations, skipping")
-                return
-            doc_form = dataset_document.doc_form
-
-            # Proceed with index cleanup using the index_node_ids directly
-            # For actual deletion, we should delete summaries (not just disable them)
-            index_processor = IndexProcessorFactory(doc_form).init_index_processor()
-            index_processor.clean(
-                dataset,
-                index_node_ids,
-                with_keywords=True,
-                delete_child_chunks=True,
-                precomputed_child_node_ids=child_node_ids,
-                delete_summaries=True,  # Actually delete summaries when segment is deleted,
-                session=session,
-            )
-            session.commit()
+                # attachment cleanup below still runs: it removes durable records that
+                # no other task deletes, regardless of the document's index eligibility
+                logging.info("Document not in valid state for index operations, skipping index cleanup")
+            else:
+                # Proceed with index cleanup using the index_node_ids directly
+                # For actual deletion, we should delete summaries (not just disable them)
+                index_processor.clean(
+                    dataset,
+                    index_node_ids,
+                    with_keywords=True,
+                    delete_child_chunks=True,
+                    precomputed_child_node_ids=child_node_ids,
+                    delete_summaries=True,  # Actually delete summaries when segment is deleted,
+                    session=session,
+                )
+                session.commit()
             if dataset.is_multimodal:
                 # delete segment attachment binding
                 segment_attachment_bindings = session.scalars(

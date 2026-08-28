@@ -1,15 +1,18 @@
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.rag.index_processor.constant.index_type import IndexStructureType
-from models.dataset import Dataset, Document, DocumentSegment
-from models.enums import DataSourceType, DocumentCreatedFrom, IndexingStatus, SegmentStatus
+from extensions.storage.storage_type import StorageType
+from models.dataset import Dataset, Document, DocumentSegment, SegmentAttachmentBinding
+from models.enums import CreatorUserRole, DataSourceType, DocumentCreatedFrom, IndexingStatus, SegmentStatus
+from models.model import UploadFile
 from tasks.delete_segment_from_index_task import delete_segment_from_index_task
 from tasks.disable_segment_from_index_task import disable_segment_from_index_task
 from tasks.disable_segments_from_index_task import disable_segments_from_index_task
@@ -152,3 +155,50 @@ def test_delete_segment_commits_index_cleanup_without_attachments(
         delete_segment_from_index_task.run(["node-1"], dataset.id, document.id, [segment.id])
 
     assert phase_events == ["clean", "commit"]
+
+
+def test_delete_segment_cleans_attachment_records_when_document_disabled(
+    indexed_segment: tuple[Dataset, Document, DocumentSegment],
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    dataset, document, segment = indexed_segment
+    dataset.is_multimodal = True
+    document.enabled = False
+    attachment = UploadFile(
+        tenant_id=dataset.tenant_id,
+        storage_type=StorageType.LOCAL,
+        key="attachments/image.png",
+        name="image.png",
+        size=10,
+        extension=".png",
+        mime_type="image/png",
+        created_by_role=CreatorUserRole.ACCOUNT,
+        created_by=dataset.created_by,
+        created_at=datetime(2026, 1, 1),
+        used=True,
+    )
+    binding = SegmentAttachmentBinding(
+        tenant_id=dataset.tenant_id,
+        dataset_id=dataset.id,
+        document_id=document.id,
+        segment_id=segment.id,
+        attachment_id=attachment.id,
+    )
+    sqlite_session.add_all([dataset, document, attachment, binding])
+    sqlite_session.commit()
+    processor = MagicMock()
+
+    with patch("tasks.delete_segment_from_index_task.IndexProcessorFactory") as processor_factory:
+        processor_factory.return_value.init_index_processor.return_value = processor
+        delete_segment_from_index_task.run([segment.index_node_id], dataset.id, document.id, [segment.id])
+
+    # index cleanup is skipped for the disabled document, but attachment vectors are still cleaned
+    processor.clean.assert_called_once()
+    assert processor.clean.call_args.kwargs["node_ids"] == [attachment.id]
+    with sqlite_session_factory() as verify_session:
+        remaining_bindings = verify_session.scalars(
+            select(SegmentAttachmentBinding).where(SegmentAttachmentBinding.segment_id == segment.id)
+        ).all()
+        assert remaining_bindings == []
+        assert verify_session.get(UploadFile, attachment.id) is None

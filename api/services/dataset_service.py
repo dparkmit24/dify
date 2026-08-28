@@ -3865,26 +3865,25 @@ class SegmentService:
         if cache_result is not None:
             raise ValueError("Segment is deleting.")
 
-        # enabled segment need to delete index
-        if segment.enabled:
-            # send delete segment index task
-            redis_client.setex(indexing_cache_key, 600, 1)
+        # send delete segment index task; dispatch even for disabled segments because the
+        # task also owns durable cleanup (attachment bindings, upload files, summaries)
+        redis_client.setex(indexing_cache_key, 600, 1)
 
-            # Get child chunk IDs before parent segment is deleted
-            child_node_ids = []
-            if segment.index_node_id:
-                child_node_ids = list(
-                    session.scalars(
-                        select(ChildChunk.index_node_id).where(
-                            ChildChunk.segment_id == segment.id,
-                            ChildChunk.dataset_id == dataset.id,
-                        )
-                    ).all()
-                )
-
-            delete_segment_from_index_task.delay(
-                [segment.index_node_id], dataset.id, document.id, [segment.id], child_node_ids
+        # Get child chunk IDs before parent segment is deleted
+        child_node_ids = []
+        if segment.index_node_id:
+            child_node_ids = list(
+                session.scalars(
+                    select(ChildChunk.index_node_id).where(
+                        ChildChunk.segment_id == segment.id,
+                        ChildChunk.dataset_id == dataset.id,
+                    )
+                ).all()
             )
+
+        delete_segment_from_index_task.delay(
+            [segment.index_node_id], dataset.id, document.id, [segment.id], child_node_ids
+        )
 
         session.delete(segment)
         # update document word count
