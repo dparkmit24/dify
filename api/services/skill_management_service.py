@@ -114,7 +114,7 @@ _UNTITLED_SKILL_MD_BODY = """# Untitled skill
 
 Describe what this Skill does, when an Agent should use it, and any step-by-step instructions it must follow.
 """
-_FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
+_FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?", re.DOTALL)
 _FILE_EXTENSION_RE = re.compile(r"\.[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
 _SKILL_ASSISTANT_SYSTEM_PROMPT = """You are Dify's Skill Authoring assistant.
 
